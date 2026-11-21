@@ -855,7 +855,11 @@ func (t *Torrent) worstRemoteConn() *connection {
 }
 
 func (cn *connection) iterPendingRequests(piece pieceIndex, f func(request) bool) bool {
-	if cn.t.cl.config.PreferLocalPeers && !cn.isLocalPeer() && cn.t.localPeerServes(piece) {
+	// Urgent pieces (a reader is in or right before them, e.g. after a seek) are
+	// still requested from everyone: spreading them over many peers keeps the
+	// latency low. Readahead and normal pieces are left to the local peer.
+	if cn.t.cl.config.PreferLocalPeers && !cn.isLocalPeer() &&
+		cn.t.piecePriority(piece) < PiecePriorityNext && cn.t.localPeerServes(piece) {
 		return true // a local peer will serve this piece
 	}
 	return iterUndirtiedChunks(piece, cn.t, func(cs chunkSpec) bool {
