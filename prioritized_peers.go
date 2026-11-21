@@ -44,6 +44,12 @@ func (me *prioritizedPeers) DeleteMin() (ret prioritizedPeersItem, ok bool) {
 	return
 }
 
+// topIsLocal reports whether the next peer to be dialed is on the local network.
+func (me *prioritizedPeers) topIsLocal() bool {
+	i := me.om.Max()
+	return i != nil && localIP(i.(prioritizedPeersItem).p.IP)
+}
+
 func (me *prioritizedPeers) PopMax() Peer {
 	return me.om.DeleteMax().(prioritizedPeersItem).p
 }

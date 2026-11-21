@@ -1077,7 +1077,16 @@ func (cl *Client) newTorrent(ih metainfo.Hash, specStorage storage.ClientImpl) (
 		peers: prioritizedPeers{
 			om: btree.New(32),
 			getPrio: func(p Peer) peerPriority {
-				return bep40PriorityIgnoreError(cl.publicAddr(p.IP), p.addr())
+				prio := bep40PriorityIgnoreError(cl.publicAddr(p.IP), p.addr())
+				if cl.config.PreferLocalPeers {
+					// Local peers rank above all remote ones (top bit); the BEP 40
+					// order is kept within each group.
+					prio >>= 1
+					if localIP(p.IP) {
+						prio |= 1 << 31
+					}
+				}
+				return prio
 			},
 		},
 		conns: make(map[*connection]struct{}, 2*cl.config.EstablishedConnsPerTorrent),

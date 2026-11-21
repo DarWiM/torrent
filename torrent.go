@@ -840,6 +840,9 @@ func (t *Torrent) worstBadConn() *connection {
 	heap.Init(&wcs)
 	for wcs.Len() != 0 {
 		c := heap.Pop(&wcs).(*connection)
+		if t.cl.config.PreferLocalPeers && c.isLocalPeer() {
+			continue // local peers are kept
+		}
 		if c.stats.ChunksReadWasted.Int64() >= 6 && c.stats.ChunksReadWasted.Int64() > c.stats.ChunksReadUseful.Int64() {
 			return c
 		}
@@ -1051,7 +1054,10 @@ func (t *Torrent) maxHalfOpen() int {
 func (t *Torrent) openNewConns() {
 	defer t.updateWantPeersEvent()
 	for t.peers.Len() != 0 {
-		if !t.wantConns() {
+		// With PreferLocalPeers a local peer is dialed even when the connection
+		// limit is reached (addConnection then drops the worst remote peer).
+		localNext := t.cl.config.PreferLocalPeers && t.networkingEnabled && !t.closed.IsSet() && t.peers.topIsLocal()
+		if !t.wantConns() && !localNext {
 			return
 		}
 		if len(t.halfOpen) >= t.maxHalfOpen() {
@@ -1551,7 +1557,11 @@ func (t *Torrent) addConnection(c *connection) (err error) {
 		}
 	}
 	if len(t.conns) >= t.maxEstablishedConns {
+		newConn := c
 		c := t.worstBadConn()
+		if c == nil && t.cl.config.PreferLocalPeers && newConn.isLocalPeer() {
+			c = t.worstRemoteConn()
+		}
 		if c == nil {
 			return errors.New("don't want conns")
 		}

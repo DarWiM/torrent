@@ -133,6 +133,18 @@ type ClientConfig struct {
 	PublicIp6 net.IP
 
 	DisableAcceptRateLimiting bool
+
+	// Prefer peers on the local network (loopback, private and link-local
+	// addresses), e.g. another client on the same machine or in the same home
+	// network that already has the data. When enabled:
+	//   - a piece that a responsive local peer has is not requested from
+	//     remote peers (if the local peer stalls, requests go to everyone again);
+	//   - local peers are dialed first and are always accepted, even when
+	//     EstablishedConnsPerTorrent is reached (the worst remote connection
+	//     is dropped instead), and are never dropped as "bad" connections.
+	// Off by default: behaviour is unchanged.
+	PreferLocalPeers bool
+
 	// Don't add connections that have the same peer ID as an existing
 	// connection for a given Torrent.
 	dropDuplicatePeerIds bool

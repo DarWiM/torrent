@@ -813,7 +813,51 @@ func (cn *connection) iterPendingPiecesUntyped(f iter.Callback) {
 	cn.iterPendingPieces(func(i pieceIndex) bool { return f(i) })
 }
 
+// localIP reports whether ip is on the local network: loopback, private
+// (RFC 1918 / RFC 4193) or link-local.
+func localIP(ip net.IP) bool {
+	return ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast())
+}
+
+func (cn *connection) isLocalPeer() bool {
+	return localIP(cn.remoteIp())
+}
+
+// localPeerServes reports whether a responsive local peer can serve the piece:
+// it has the piece, isn't choking us, and either has no outstanding requests or
+// delivered a useful chunk within the last 5 seconds. Used with
+// PreferLocalPeers to keep such pieces away from remote peers.
+func (t *Torrent) localPeerServes(piece pieceIndex) bool {
+	for c := range t.conns {
+		if !c.isLocalPeer() || c.PeerChoked || c.closed.IsSet() || !c.PeerHasPiece(piece) {
+			continue
+		}
+		if len(c.requests) == 0 || time.Since(c.lastUsefulChunkReceived) < 5*time.Second {
+			return true
+		}
+	}
+	return false
+}
+
+// worstRemoteConn returns the worst connection to a non-local peer, to be
+// replaced by an incoming local peer when the connection limit is reached.
+func (t *Torrent) worstRemoteConn() *connection {
+	var worst *connection
+	for c := range t.conns {
+		if c.closed.IsSet() || c.isLocalPeer() {
+			continue
+		}
+		if worst == nil || worseConn(c, worst) {
+			worst = c
+		}
+	}
+	return worst
+}
+
 func (cn *connection) iterPendingRequests(piece pieceIndex, f func(request) bool) bool {
+	if cn.t.cl.config.PreferLocalPeers && !cn.isLocalPeer() && cn.t.localPeerServes(piece) {
+		return true // a local peer will serve this piece
+	}
 	return iterUndirtiedChunks(piece, cn.t, func(cs chunkSpec) bool {
 		r := request{pp.Integer(piece), cs}
 		if cn.t.requestStrategy == 3 {
